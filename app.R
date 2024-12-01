@@ -5,7 +5,6 @@ library(DT)
 library(data.table)
 library(shinyWidgets)
 library(LogRegSISEM2)
-library(shinyjs)
 
 
 # Maximum upload size definition (in Mo) ===================================================
@@ -13,10 +12,7 @@ max_mega_octets <- 100
 options(shiny.maxRequestSize = max_mega_octets*1024^2)
 
 
-# FONCTION A PACKAGER DANS LE REPOS GH XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
-
-# Fonction pour traiter les valeurs manquantes ----------------------------------------------
+# NA values processing --------------------------------------------------------
 handle_missing_values <- function(dataset, NA_process) {
   if (NA_process == "Drop NA") {
     cleaned_dataset <- na.omit(dataset)
@@ -41,9 +37,8 @@ handle_missing_values <- function(dataset, NA_process) {
   }
   return(cleaned_dataset)
 }
-# ----------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
-# XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 # User interface ==========================================================================
 ui <- fluidPage(
@@ -107,11 +102,17 @@ ui <- fluidPage(
           DTOutput("table"),  # Dataset output as table
           DTOutput("cleaned_table") # NA cleaned dataset output as table
         ),
-        
+
+        #Encoding methods
+        tabPanel(title = "Encoding methods",
+                 actionButton("apply_encoding", "Apply encoding", 
+                              style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
+                 uiOutput("encoding_widgets")  # Dynamically generated widgets
+        ),
+
         #Encoded dataset output
         tabPanel(title = "Encoded dataset",
-                 verbatimTextOutput("encoding_summary")
-                 
+                 DTOutput("processed_table") 
         ),
         
         #Logistic regression results
@@ -123,12 +124,6 @@ ui <- fluidPage(
 
 # Server =======================================================================
 server <- function(input, output,session) {
-  
-  # Shinyjs package loading
-  observe({
-    useShinyjs()
-  })
-  
   
 # Preprocessing (before encoding) ----------------------------------------------
   
@@ -168,7 +163,7 @@ server <- function(input, output,session) {
   # Target variable selection
   output$target_variable_selector <- renderUI({
     vars <- colnames(dataset())
-    selectInput("target_variable", "Sélectionnez une variable cible :",
+    selectInput("target_variable", "Select a target variable :",
                   choices = vars, selected = vars[1])
     }
   )
@@ -190,6 +185,67 @@ server <- function(input, output,session) {
       caption = htmltools::tags$caption(
         style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
         "Cleaned data (NA removed)")
+    )
+  })
+
+  # ======== CATEGORICAL VARIABLE ENCODING ==========================================================
+
+  # Dynamic widget for encoding
+  output$encoding_widgets <- renderUI({
+    req(cleaned_dataset())
+    columns <- colnames(cleaned_dataset()) # Retrieve columns names
+    # Generate one `selectInput` per columns
+    lapply(columns, function(column) {
+      selectInput(
+        inputId = paste0("encoding_", column),
+        label = paste("Encoding method for", column),
+        choices = c("no encoding", "label", "one_hot", "frequency", "binary"),
+        selected = "no encoding"
+      )
+    })
+  })
+
+  # Creation of an `encoding_dict` from user selection
+  encoding_dict <- reactive({
+    req(cleaned_dataset())
+    columns <- colnames(cleaned_dataset())
+    # Check if user inputs exists
+    all_inputs_ready <- all(sapply(columns, function(column) {
+      !is.null(input[[paste0("encoding_", column)]])
+    }))
+    if (!all_inputs_ready) {
+      return(NULL)  # Return NULL if inputs not available yet
+    }
+    # Building encoding_dict
+    choices <- lapply(columns, function(column) {
+      input[[paste0("encoding_", column)]]
+    })
+    names(choices) <- columns
+    return(choices)
+  })
+
+  # Encoding then output as processed dataset
+  processed_data <- eventReactive(input$apply_encoding, {
+    req(cleaned_dataset())  
+    req(encoding_dict())    
+    # Creation of CategoricalVerifier (from LogRegSISEM2)
+    verifier <- CategoricalVerifier$new(cleaned_dataset(), encoding_dict = encoding_dict())
+    # Applying encoding method
+    verifier$apply_encoding()
+    # Retrieving processed dataset
+    verifier$get_dataset()
+  })
+
+  # Output in a renderDataTable
+  output$processed_table <- renderDT({
+    req(processed_data())
+    datatable(
+      processed_data(),
+      class = 'cell-border stripe',
+      options = list(pageLength = 10, scrollX = TRUE),
+      caption = htmltools::tags$caption(
+        style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
+        "Encoded dataset")
     )
   })
   
