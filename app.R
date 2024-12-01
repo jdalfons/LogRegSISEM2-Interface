@@ -12,6 +12,7 @@ max_mega_octets <- 100
 options(shiny.maxRequestSize = max_mega_octets*1024^2)
 
 
+
 # NA values processing --------------------------------------------------------
 handle_missing_values <- function(dataset, NA_process) {
   if (NA_process == "Drop NA") {
@@ -20,7 +21,7 @@ handle_missing_values <- function(dataset, NA_process) {
     cleaned_dataset <- dataset
     for (col in names(cleaned_dataset)) {
       if (is.numeric(cleaned_dataset[[col]])) {
-        mean_value <- mean(cleaned_dataset[[col]], na.rm = TRUE)
+        mean_value <- round(mean(cleaned_dataset[[col]], na.rm = TRUE), 1)
         cleaned_dataset[[col]][is.na(cleaned_dataset[[col]])] <- mean_value
       }
     }
@@ -28,7 +29,7 @@ handle_missing_values <- function(dataset, NA_process) {
     cleaned_dataset <- dataset
     for (col in names(cleaned_dataset)) {
       if (is.numeric(cleaned_dataset[[col]])) {
-        median_value <- median(cleaned_dataset[[col]], na.rm = TRUE)
+        median_value <- round(median(cleaned_dataset[[col]], na.rm = TRUE), 1)
         cleaned_dataset[[col]][is.na(cleaned_dataset[[col]])] <- median_value
       }
     }
@@ -42,58 +43,58 @@ handle_missing_values <- function(dataset, NA_process) {
 
 # User interface ==========================================================================
 ui <- fluidPage(
-  useShinyjs(),
+  # useShinyjs(),
   titlePanel("Multimodal logistic regression"),
-  
+
   # Sidebarpanel output --------------------------------------------------------------
-  
+
   sidebarLayout(
-    
+
     sidebarPanel(
-      
+
       div(
-        style = "border: 2px solid orange; 
-                 border-radius: 5px; 
-                 padding: 15px; 
-                 background-color: #FFEBCC; 
+        style = "border: 2px solid orange;
+                 border-radius: 5px;
+                 padding: 15px;
+                 background-color: #FFEBCC;
                  margin-bottom: 10px;",
-        
+
         # File upload
         fileInput("file", "Upload a dataset (.csv, .xlsx, ou .data file)",
                   accept = c(".csv", ".xlsx",".data")),
-        
+
         # Separator selection (.csv files)
-        selectInput("sep", "Choose a separator (if .csv)", 
+        selectInput("sep", "Choose a separator (if .csv)",
                     choices = c(",", ";", "tabulation"="\t"),
                     selected = ",")
         ),
-      
+
       # Target variable selection
       tags$div(
-        style = "border: 2px solid #28a745; 
-          border-radius: 5px; 
-          padding: 10px; 
-          background-color: #AFF5B0; 
+        style = "border: 2px solid #28a745;
+          border-radius: 5px;
+          padding: 10px;
+          background-color: #AFF5B0;
           color: #333;",
         tags$h4("Selected target variable :"),
         uiOutput("target_variable_selector")  # widget for var. selection
       ),
-      
+
       # NA cells processing
-      selectInput_wrapper <- div(  
-        style = "border: 2px solid blue; 
-           border-radius: 5px; 
+      selectInput_wrapper <- div(
+        style = "border: 2px solid blue;
+           border-radius: 5px;
            background-color: #A7C6ED;
-           padding: 10px; 
+           padding: 10px;
            margin: 10px 0;",
         selectInput(inputId = "NA_process",
                     label = "Choose a NA processing method",
                     choices = c("Drop NA","Mean value","Median value"),
                     selected = "Drop Na")
       )
-      
+
     ),
-    
+
     # Mainpanel output - 3 tabs -----------------------------------------------
     mainPanel(
       tabsetPanel(
@@ -105,16 +106,16 @@ ui <- fluidPage(
 
         #Encoding methods
         tabPanel(title = "Encoding methods",
-                 actionButton("apply_encoding", "Apply encoding", 
+                 actionButton("apply_encoding", "Apply encoding",
                               style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
                  uiOutput("encoding_widgets")  # Dynamically generated widgets
         ),
 
         #Encoded dataset output
         tabPanel(title = "Encoded dataset",
-                 DTOutput("processed_table") 
+                 DTOutput("processed_table")
         ),
-        
+
         #Logistic regression results
         tabPanel(title = "Log. regression results")
       )
@@ -124,15 +125,15 @@ ui <- fluidPage(
 
 # Server =======================================================================
 server <- function(input, output,session) {
-  
+
 # Preprocessing (before encoding) ----------------------------------------------
-  
+
   # File reading according to extension
   dataset <- reactive({
     req(input$file)  # File selection check
     req(input$sep)   # Separator choice check
     file <- input$file
-    
+
     # Extension checking and file reading
     ext <- tools::file_ext(file$name)
     if (ext == "csv") {
@@ -146,13 +147,13 @@ server <- function(input, output,session) {
       return(NULL)
     }
   })
-  
+
   # Initial dataset output as a table
   output$table <- renderDT({
     req(dataset())
     datatable(
       dataset(),
-      class='cell-border stripe', 
+      class='cell-border stripe',
       options = list(pageLength = 5, scrollX = TRUE),
       caption = htmltools::tags$caption(
         style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
@@ -167,20 +168,20 @@ server <- function(input, output,session) {
                   choices = vars, selected = vars[1])
     }
   )
-  
+
   # Reactive NA processing
   cleaned_dataset <- reactive({
     req(dataset())           # Check that dataset is loaded
     req(input$NA_process)    # Check that method is selected
     handle_missing_values(dataset = dataset(), NA_process = input$NA_process)
   })
-  
+
   # Dataset output with no NAs
   output$cleaned_table <- renderDT({
     req(cleaned_dataset())
     datatable(
       cleaned_dataset(),
-      class = 'cell-border stripe', 
+      class = 'cell-border stripe',
       options = list(pageLength = 5, scrollX = TRUE),
       caption = htmltools::tags$caption(
         style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
@@ -190,20 +191,23 @@ server <- function(input, output,session) {
 
   # ======== CATEGORICAL VARIABLE ENCODING ==========================================================
 
-  # Dynamic widget for encoding
-  output$encoding_widgets <- renderUI({
-    req(cleaned_dataset())
-    columns <- colnames(cleaned_dataset()) # Retrieve columns names
-    # Generate one `selectInput` per columns
-    lapply(columns, function(column) {
-      selectInput(
-        inputId = paste0("encoding_", column),
-        label = paste("Encoding method for", column),
-        choices = c("no encoding", "label", "one_hot", "frequency", "binary"),
-        selected = "no encoding"
-      )
-    })
+# Dynamic widget for encoding
+output$encoding_widgets <- renderUI({
+  req(cleaned_dataset())
+  columns <- colnames(cleaned_dataset()) # Retrieve columns names
+  # Filter only categorical columns
+  categorical_columns <- columns[sapply(cleaned_dataset(), function(col) is.factor(col) || is.character(col))]
+  # Generate one `selectInput` per categorical column
+  lapply(categorical_columns, function(column) {
+  # lapply(columns, function(column) {
+    selectInput(
+      inputId = paste0("encoding_", column),
+      label = paste("Encoding method for", column),
+      choices = c("label", "one_hot", "frequency"),
+      selected = "label"
+    )
   })
+})
 
   # Creation of an `encoding_dict` from user selection
   encoding_dict <- reactive({
@@ -213,9 +217,9 @@ server <- function(input, output,session) {
     all_inputs_ready <- all(sapply(columns, function(column) {
       !is.null(input[[paste0("encoding_", column)]])
     }))
-    if (!all_inputs_ready) {
-      return(NULL)  # Return NULL if inputs not available yet
-    }
+    # if (!all_inputs_ready) {
+    #   return(NULL)  # Return NULL if inputs not available yet
+    # }
     # Building encoding_dict
     choices <- lapply(columns, function(column) {
       input[[paste0("encoding_", column)]]
@@ -226,8 +230,8 @@ server <- function(input, output,session) {
 
   # Encoding then output as processed dataset
   processed_data <- eventReactive(input$apply_encoding, {
-    req(cleaned_dataset())  
-    req(encoding_dict())    
+    req(cleaned_dataset())
+    req(encoding_dict())
     # Creation of CategoricalVerifier (from LogRegSISEM2)
     verifier <- CategoricalVerifier$new(cleaned_dataset(), encoding_dict = encoding_dict())
     # Applying encoding method
@@ -248,7 +252,7 @@ server <- function(input, output,session) {
         "Encoded dataset")
     )
   })
-  
+
 }
 
 
