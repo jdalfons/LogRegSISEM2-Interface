@@ -2,6 +2,9 @@
 
 This Shiny application allows users to perform multimodal logistic regression on a dataset. Users can upload a dataset, handle missing values, encode categorical variables, and run logistic regression to get predictions and probabilities.
 
+## Exemples
+You can find an example of how to use the application in the [exemples folder](https://github.com/jdalfons/LogRegSISEM2-Interface/tree/main/exemples).
+
 ## Features
 
 - Upload datasets in `.csv`, `.xlsx`, or `.data` formats.
