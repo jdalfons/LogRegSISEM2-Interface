@@ -248,6 +248,90 @@ server <- function(input, output,session) {
         "Encoded dataset")
     )
   })
+
+  # ============================ LOGISTIC REGRESSION  ==========================================================
+  
+  # Target vector `y`
+  y <- reactive({
+    req(dataset())           
+    req(input$target_variable)  
+    processed_data()[[input$target_variable]]  # Extract the column as a vector
+  })
+
+  # Dataframe X (processed_data without the target variable)
+  X <- reactive({
+    req(processed_data())  
+    req(input$target_variable)  
+    # Exclude the target variable column
+    processed_data()[ , !(names(processed_data()) %in% input$target_variable), drop = FALSE]
+  })
+
+  # Split data into training and testing sets
+  split_data <- reactive({
+    req(X())
+    req(y())  
+    set.seed(123)  # Set seed for reproducibility
+    train_indices <- sample(seq_len(nrow(X())), size = 0.8 * nrow(X()))
+    list(
+      X_train = X()[train_indices, , drop = FALSE],
+      y_train = as.factor(y()[train_indices]),
+      X_test = X()[-train_indices, , drop = FALSE],
+      y_test = y()[-train_indices]
+    )
+  })
+  
+  # Train the logistic regression model
+  trained_model <- reactive({
+    req(split_data())
+    reglog_model <- LogisticRegression$new(
+      learning_rate = 0.01,
+      iterations = 1000,
+      lambda = 0.1
+    )
+    # Train the model
+    reglog_model$fit(split_data()$X_train, split_data()$y_train)
+    reglog_model
+  })
+
+  # Reactive: Make predictions
+  predictions <- reactive({
+    req(trained_model())
+    req(split_data())
+    
+    list(
+      predictions = trained_model()$predict(split_data()$X_test),
+      probabilities = trained_model()$predict_proba(split_data()$X_test)
+    )
+  })
+  
+  # Reactive: Model summary
+  model_summary <- reactive({
+    req(trained_model())
+    trained_model()$summary()
+  })
+  
+  # Output for predictions, probabilities, and model summary
+  output$predictions_table <- renderDT({
+    req(predictions())
+    
+    data.frame(
+      Predicted = predictions()$predictions,
+      Probability = predictions()$probabilities
+    ) %>%
+      datatable(
+        class = 'cell-border stripe',
+        options = list(pageLength = 10, scrollX = TRUE),
+        caption = htmltools::tags$caption(
+          style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
+          "Predictions and probabilities"
+        )
+      )
+  })
+  output$model_summary <- renderPrint({
+    req(model_summary())
+    model_summary()
+  })
+
   
 }
 
