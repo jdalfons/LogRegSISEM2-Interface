@@ -27,3 +27,19 @@ This Shiny application allows users to perform multimodal logistic regression on
 ```sh
 git clone https://github.com/yourusername/LogRegSISEM2-interface.git
 cd LogRegSISEM2-interface
+```
+### Step 2: Check for `renv` and Activate
+
+Ensure you have `renv` installed and activate it:
+
+```sh
+if (!requireNamespace("renv", quietly = TRUE)) {
+    install.packages("renv")
+}
+renv::activate()
+```
+### Step 3: Run the Application
+
+```sh
+R -e "shiny::runApp()"
+```
