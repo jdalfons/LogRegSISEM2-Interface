@@ -116,7 +116,21 @@ ui <- fluidPage(
         ),
         
         #Logistic regression results
-        tabPanel(title = "Log. regression results")
+        tabPanel(title = "Log. regression results",
+                 actionButton("run_logreg", "Run logistic regression", 
+                              style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
+                 
+                 # Text input widgets for learning rate, iterations, and lambda
+                 textInput("learning_rate", "Learning rate:", value = "0.01", width = "100%"),
+                 textInput("iterations", "Number of iterations:", value = "1000", width = "100%"),
+                 textInput("lambda", "Lambda:", value = "0.1", width = "100%"),
+                 
+                 
+                 h3("Model Summary"),
+                 verbatimTextOutput("model_summary"),
+                 h3("Predictions and Probabilities"),
+                 DTOutput("predictions_table")
+        )
       )
     )
   )
@@ -251,93 +265,79 @@ server <- function(input, output,session) {
 
   # ============================ LOGISTIC REGRESSION  ==========================================================
   
-  # Target vector `y`
-  y <- reactive({
-    req(dataset())           
-    req(input$target_variable)  
-    processed_data()[[input$target_variable]]  # Extract the column as a vector
-  })
-
-  # Dataframe X (processed_data without the target variable)
+  # X and y variables
   X <- reactive({
-    req(processed_data())  
-    req(input$target_variable)  
-    # Exclude the target variable column
-    processed_data()[ , !(names(processed_data()) %in% input$target_variable), drop = FALSE]
+    req(cleaned_dataset())
+    cleaned_dataset()[, setdiff(names(cleaned_dataset()), input$target_variable), drop = FALSE]  # Exclude target variable
   })
-
-  # Split data into training and testing sets
-  split_data <- reactive({
-    req(X())
+  y <- reactive({
+    req(cleaned_dataset())
+    cleaned_dataset()[[input$target_variable]]  # Target variable
+  })
+  # Model parameters for logistic regression
+  learning_rate <- reactive({
+    as.numeric(input$learning_rate)
+  })
+  iterations <- reactive({
+    as.integer(input$iterations)
+  })
+  lambda <- reactive({
+    as.numeric(input$lambda)
+  })
+  # Initializing model and predictions
+  reglog_model <- NULL
+  predictions <- NULL
+  probabilities <- NULL
+  
+  # Running logistic regression when button is clicked
+  observeEvent(input$run_logreg, {
+    req(X())  
     req(y())  
-    set.seed(123)  # Set seed for reproducibility
+    req(learning_rate())
+    req(iterations())
+    req(lambda())
+    
+    # Train/test split (with seed = 123)
+    set.seed(123)
     train_indices <- sample(seq_len(nrow(X())), size = 0.8 * nrow(X()))
-    list(
-      X_train = X()[train_indices, , drop = FALSE],
-      y_train = as.factor(y()[train_indices]),
-      X_test = X()[-train_indices, , drop = FALSE],
-      y_test = y()[-train_indices]
+    X_train <- X()[train_indices, , drop = FALSE]
+    y_train <- as.factor(y()[train_indices])
+    X_test <- X()[-train_indices, , drop = FALSE]
+    y_test <- y()[-train_indices]
+    # Creating and training log. regression model
+    reglog_model <<- LogisticRegression$new(
+      learning_rate = learning_rate(),
+      iterations = iterations(),
+      lambda = lambda()
     )
-  })
-  
-  # Train the logistic regression model
-  trained_model <- reactive({
-    req(split_data())
-    reglog_model <- LogisticRegression$new(
-      learning_rate = 0.01,
-      iterations = 1000,
-      lambda = 0.1
-    )
-    # Train the model
-    reglog_model$fit(split_data()$X_train, split_data()$y_train)
-    reglog_model
-  })
-
-  # Reactive: Make predictions
-  predictions <- reactive({
-    req(trained_model())
-    req(split_data())
-    
-    list(
-      predictions = trained_model()$predict(split_data()$X_test),
-      probabilities = trained_model()$predict_proba(split_data()$X_test)
-    )
-  })
-  
-  # Reactive: Model summary
-  model_summary <- reactive({
-    req(trained_model())
-    trained_model()$summary()
-  })
-  
-  # Output for predictions, probabilities, and model summary
-  output$predictions_table <- renderDT({
-    req(predictions())
-    
-    data.frame(
-      Predicted = predictions()$predictions,
-      Probability = predictions()$probabilities
-    ) %>%
-      datatable(
-        class = 'cell-border stripe',
-        options = list(pageLength = 10, scrollX = TRUE),
-        caption = htmltools::tags$caption(
-          style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
-          "Predictions and probabilities"
+    reglog_model$fit(X_train, y_train)
+    # Predictions and probabilities
+    predictions <<- reglog_model$predict(X_test)
+    probabilities <<- reglog_model$predict_proba(X_test)
+    # Printing model summary
+    output$model_summary <- renderPrint({
+      reglog_model$summary()
+    })
+    # Output summary in a table
+    output$predictions_table <- renderDT({
+      data.frame(
+        Predicted = predictions,
+        Probability = probabilities
+      ) %>%
+        datatable(
+          class = 'cell-border stripe',
+          options = list(pageLength = 10, scrollX = TRUE),
+          caption = htmltools::tags$caption(
+            style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
+            "Predictions and probabilities"
+          )
         )
-      )
+    })
   })
-  output$model_summary <- renderPrint({
-    req(model_summary())
-    model_summary()
-  })
-
   
 }
 
-
-
 # ===========================================================================================
 
-# Lancer l'application
+# Running app
 shinyApp(ui = ui, server = server)
