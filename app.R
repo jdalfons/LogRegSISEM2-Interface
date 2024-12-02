@@ -91,7 +91,7 @@ ui <- fluidPage(
                     label = "Choose a NA processing method",
                     choices = c("Drop NA","Mean value","Median value"),
                     selected = "Drop Na")
-      )
+      ),
 
     ),
 
@@ -118,18 +118,20 @@ ui <- fluidPage(
 
         #Logistic regression results
         tabPanel(title = "Log. regression results",
-                 actionButton("run_logreg", "Run logistic regression", 
-                              style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
-                 
-                 # Text input widgets for learning rate, iterations, and lambda
-                 textInput("learning_rate", "Learning rate:", value = "0.01", width = "100%"),
-                 textInput("iterations", "Number of iterations:", value = "1000", width = "100%"),
-                 
-                 
-                 h3("Model Summary"),
-                 verbatimTextOutput("model_summary"),
-                 h3("Predictions and Probabilities"),
-                 DTOutput("predictions_table")
+           actionButton("run_logreg", "Run logistic regression", 
+                  style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
+           
+           # Text input widgets for learning rate, iterations, and lambda
+           textInput("learning_rate", "Learning rate:", value = "0.01", width = "100%"),
+           textInput("iterations", "Number of iterations:", value = "1000", width = "100%"),
+           
+           
+           h3("Model Summary"),
+           verbatimTextOutput("model_summary"),
+           h3("Predictions and Probabilities"),
+           DTOutput("predictions_table"),
+           h3("Actual Values"),
+           verbatimTextOutput("actual_values")
         )
       )
     )
@@ -302,9 +304,9 @@ output$encoding_widgets <- renderUI({
     set.seed(123)
     train_indices <- sample(seq_len(nrow(X())), size = 0.8 * nrow(X()))
     X_train <- X()[train_indices, , drop = FALSE]
-    y_train <- as.factor(ifelse(y()[train_indices] == unique(y())[1], 1, 0))
+    y_train <- y()[train_indices]
     X_test <- X()[-train_indices, , drop = FALSE]
-    y_test <- as.factor(ifelse(y()[-train_indices] == unique(y())[1], 1, 0))
+    y_test <- y()[-train_indices]
     # Creating and training log. regression model
     reglog_model <<- LogisticRegression$new(
       learning_rate = learning_rate()
@@ -332,6 +334,10 @@ output$encoding_widgets <- renderUI({
             "Predictions and probabilities"
           )
         )
+    })
+    # Output actual values
+    output$actual_values <- renderPrint({
+      y_test
     })
   })
   
