@@ -117,7 +117,20 @@ ui <- fluidPage(
         ),
 
         #Logistic regression results
-        tabPanel(title = "Log. regression results")
+        tabPanel(title = "Log. regression results",
+                 actionButton("run_logreg", "Run logistic regression", 
+                              style = "margin-bottom: 15px; background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px;"),
+                 
+                 # Text input widgets for learning rate, iterations, and lambda
+                 textInput("learning_rate", "Learning rate:", value = "0.01", width = "100%"),
+                 textInput("iterations", "Number of iterations:", value = "1000", width = "100%"),
+                 
+                 
+                 h3("Model Summary"),
+                 verbatimTextOutput("model_summary"),
+                 h3("Predictions and Probabilities"),
+                 DTOutput("predictions_table")
+        )
       )
     )
   )
@@ -194,12 +207,11 @@ server <- function(input, output,session) {
 # Dynamic widget for encoding
 output$encoding_widgets <- renderUI({
   req(cleaned_dataset())
-  columns <- colnames(cleaned_dataset()) # Retrieve columns names
+  columns <- setdiff(colnames(cleaned_dataset()), input$target_variable) # Exclude target variable
   # Filter only categorical columns
-  categorical_columns <- columns[sapply(cleaned_dataset(), function(col) is.factor(col) || is.character(col))]
+  categorical_columns <- columns[sapply(cleaned_dataset()[, columns, drop = FALSE], function(col) is.factor(col) || is.character(col))]
   # Generate one `selectInput` per categorical column
   lapply(categorical_columns, function(column) {
-  # lapply(columns, function(column) {
     selectInput(
       inputId = paste0("encoding_", column),
       label = paste("Encoding method for", column),
@@ -233,7 +245,10 @@ output$encoding_widgets <- renderUI({
     req(cleaned_dataset())
     req(encoding_dict())
     # Creation of CategoricalVerifier (from LogRegSISEM2)
-    verifier <- CategoricalVerifier$new(cleaned_dataset(), encoding_dict = encoding_dict())
+    verifier <- CategoricalVerifier$new(
+      cleaned_dataset(), 
+      encoding_dict = encoding_dict(), 
+      target_var=input$target_variable)
     # Applying encoding method
     verifier$apply_encoding()
     # Retrieving processed dataset
@@ -253,11 +268,76 @@ output$encoding_widgets <- renderUI({
     )
   })
 
+  # ============================ LOGISTIC REGRESSION  ==========================================================
+  
+  # X and y variables
+  X <- reactive({
+    req(processed_data())
+    processed_data()[, setdiff(names(processed_data()), input$target_variable), drop = FALSE]  # Exclude target variable
+  })
+  y <- reactive({
+    req(processed_data())
+    processed_data()[[input$target_variable]]  # Target variable
+  })
+  # Model parameters for logistic regression
+  learning_rate <- reactive({
+    as.numeric(input$learning_rate)
+  })
+  iterations <- reactive({
+    as.integer(input$iterations)
+  })
+  # Initializing model and predictions
+  reglog_model <- NULL
+  predictions <- NULL
+  probabilities <- NULL
+  
+  # Running logistic regression when button is clicked
+  observeEvent(input$run_logreg, {
+    req(X())  
+    req(y())  
+    req(learning_rate())
+    req(iterations())
+    
+    # Train/test split (with seed = 123)
+    set.seed(123)
+    train_indices <- sample(seq_len(nrow(X())), size = 0.8 * nrow(X()))
+    X_train <- X()[train_indices, , drop = FALSE]
+    y_train <- as.factor(ifelse(y()[train_indices] == unique(y())[1], 1, 0))
+    X_test <- X()[-train_indices, , drop = FALSE]
+    y_test <- as.factor(ifelse(y()[-train_indices] == unique(y())[1], 1, 0))
+    # Creating and training log. regression model
+    reglog_model <<- LogisticRegression$new(
+      learning_rate = learning_rate()
+    )
+    reglog_model$fit(X_train, y_train)
+    # Predictions and probabilities
+    predictions <<- reglog_model$predict(X_test)
+    probabilities <<- reglog_model$predict_proba(X_test)
+    # Printing model summary
+    output$model_summary <- renderPrint({
+      reglog_model$summary()
+      cat("Accuracy: ", mean(predictions == y_test), "\n")
+    })
+    # Output summary in a table
+    output$predictions_table <- renderDT({
+      data.frame(
+        Predicted = predictions,
+        Probability = probabilities
+      ) %>%
+        datatable(
+          class = 'cell-border stripe',
+          options = list(pageLength = 10, scrollX = TRUE),
+          caption = htmltools::tags$caption(
+            style = "font-size: 20px; color: #007bff; font-weight: bold; padding: 10px; background-color: #f8f9fa; text-align: left;",
+            "Predictions and probabilities"
+          )
+        )
+    })
+  })
+  
 }
-
-
 
 # ===========================================================================================
 
-# Lancer l'application
+# Running app
 shinyApp(ui = ui, server = server)
